@@ -1,3 +1,9 @@
 
 rand
 rand.ll
+cforf/*.o
+cforf/cforfrunner
+cmake-build-debug
+__pycache__
+.idea
+.vscode
