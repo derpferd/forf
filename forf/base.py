@@ -200,18 +200,18 @@ class ForfBin(ForfCmd):
         "-": lambda x, y: x - y,
         "*": lambda x, y: x * y,
         "/": lambda x, y: x // y,
-        "%": "%",
-        "&": "&",
-        "|": "|",
-        "^": "^",
-        "<<": "<<",
-        ">>": ">>",
+        "%": lambda x, y: x % y,
+        "&": lambda x, y: x & y,
+        "|": lambda x, y: x | y,
+        "^": lambda x, y: x ^ y,
+        "<<": lambda x, y: x << y,
+        ">>": lambda x, y: x >> y,
         ">": lambda x, y: int(x > y),
-        ">=": ">=",
+        ">=": lambda x, y: int(x >= y),
         "<": lambda x, y: int(x < y),
-        "<=": "<=",
+        "<=": lambda x, y: int(x <= y),
         "=": lambda x, y: int(x == y),
-        "<>": "<>",
+        "<>": lambda x, y: int(x != y),
     }
     INPUTS = 2
     OUTPUTS = 1
@@ -224,20 +224,30 @@ class ForfBin(ForfCmd):
         b1, b2 = self._children
         ir_1 = b1.build(builder, variables)
         ir_2 = b2.build(builder, variables)
-        if self._token == "*":
-            return builder.mul(ir_1, ir_2)
-        if self._token == "+":
-            return builder.add(ir_1, ir_2)
-        if self._token == "-":
-            return builder.sub(ir_1, ir_2)
+
+        simple_ops_to_builder = {
+            "+": lambda: builder.add(ir_1, ir_2),
+            "-": lambda: builder.sub(ir_1, ir_2),
+            "*": lambda: builder.mul(ir_1, ir_2),
+            "%": lambda: builder.srem(ir_1, ir_2),
+            "&": lambda: builder.and_(ir_1, ir_2),
+            "|": lambda: builder.or_(ir_1, ir_2),
+            "^": lambda: builder.xor(ir_1, ir_2),
+            "<<": lambda: builder.shl(ir_1, ir_2),
+            ">>": lambda: builder.ashr(ir_1, ir_2),
+        }
+
+        if self._token in simple_ops_to_builder:
+            return simple_ops_to_builder[self._token]()
         if self._token == "/":
             pred = builder.icmp_signed("==", ir_2, long(0))
             with builder.if_then(pred):
                 builder.ret(long(Error.DIVIDE_BY_ZERO.value))
             return builder.sdiv(ir_1, ir_2)
-        if self._token in {"<", ">", "=="}:
+        if self._token in {"<", ">", ">=", "<=", "=", "<>"}:
+            mapped_token = {"=": "==", "<>": "!="}.get(self._token, self._token)
             return builder.select(
-                builder.icmp_signed(self._token, ir_1, ir_2), long(1), long(0)
+                builder.icmp_signed(mapped_token, ir_1, ir_2), long(1), long(0)
             )
         raise NotImplementedError
 

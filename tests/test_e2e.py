@@ -82,6 +82,18 @@ tests: Dict[str, TestCase] = {
         "prog": "4 3 - 1 + 4 * 2 / 0 mset",
         "output": {"mem": {0: 4}},
     },
+    "test + overflow": {
+        "prog": "9223372036854775807 1 + 0 mset",
+        "output": {"mem": {0: -9223372036854775808}}
+    },
+    "test - underflow": {
+        "prog": "-9223372036854775808 1 - 0 mset",
+        "output": {"mem": {0: 9223372036854775807}}
+    },
+    "test * overflow": {
+        "prog": "1152921504606846976 8 * 0 mset",
+        "output": {"mem": {0: -9223372036854775808}}
+    },
     "test %": {
         "prog": "5 2 % 0 mset",
         "output": {"mem": {0: 1}},
@@ -94,6 +106,50 @@ tests: Dict[str, TestCase] = {
         "prog": "255 7 | 0 mset",
         "output": {"mem": {0: 255}},
     },
+    "test ^": {
+        "prog": "2 10 ^ 0 mset",
+        "output": {"mem": {0: 8}},
+    },
+    "test <<": {
+        "prog": "23 1 << 0 mset",
+        "output": {"mem": {0: 46}},
+    },
+    "test << off the edge": {
+        "prog": "4611686018427387904 2 << 0 mset",
+        "output": {"mem": {0: 0}},
+    },
+    "test >> off the edge": {
+        "prog": "1352 5 >> 0 mset",
+        "output": {"mem": {0: 42}},
+    },
+    "test >> neg": {
+        "prog": "-105 1 >> 0 mset",
+        "output": {"mem": {0: -53}},
+    },
+    "test >": {
+        "prog": "-1 2 > 2 2 > 4 3 > 2 mset 1 mset 0 mset",
+        "output": {"mem": {0: 0, 1: 0, 2: 1}}
+    },
+    "test >=": {
+        "prog": "-1 2 >= 2 2 >= 4 3 >= 2 mset 1 mset 0 mset",
+        "output": {"mem": {0: 0, 1: 1, 2: 1}}
+    },
+    "test <": {
+        "prog": "-1 2 < 2 2 < 4 3 < 2 mset 1 mset 0 mset",
+        "output": {"mem": {0: 1, 1: 0, 2: 0}}
+    },
+    "test <=": {
+        "prog": "-1 2 <= 2 2 <= 4 3 <= 2 mset 1 mset 0 mset",
+        "output": {"mem": {0: 1, 1: 1, 2: 0}}
+    },
+    "test =": {
+        "prog": "-1 2 = 2 2 = 4 3 = 2 mset 1 mset 0 mset",
+        "output": {"mem": {0: 0, 1: 1, 2: 0}}
+    },
+    "test <>": {
+        "prog": "-1 2 <> 2 2 <> 4 3 <> 2 mset 1 mset 0 mset",
+        "output": {"mem": {0: 1, 1: 0, 2: 1}}
+    }
     # Nested ifelse
     # Variable number of values on stack after ifelse
 }

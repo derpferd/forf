@@ -356,16 +356,6 @@ def test_parse(tokens, output):
 #     assert "pop from empty stack" in str(excinfo.value)
 
 
-def test_exec():
-    state = exec("1 2 + 0 mset 3 4 + 1 mset")
-    assert state.mem[0] == 3
-    assert state.mem[1] == 7
-
-    assert exec("58 58 * 0 mset").mem[0] == 58 ** 2
-    assert exec("58 dup dup * * 0 mset").mem[0] == 58 ** 3
-    assert exec("5 8 < { 50 8 + } { 50 8 - } ifelse 0 mset").mem[0] == 58
-
-
 # @pytest.mark.parametrize('num,in_list,inputs,out_list', (
 #     (1, [ForfValue(1)], [ForfValue(1)], []),
 #     (2, [ForfValue(1), ForfValue(2)], [ForfValue(1), ForfValue(2)], []),
