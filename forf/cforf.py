@@ -236,7 +236,6 @@ class CForfState(ForfState):
 
 class LibCForf:
     def __init__(self):
-        print(pkg_resources.resource_listdir(__name__, ""))
         globs_to_try = [os.path.join(os.path.split(__file__)[0], "..", "forf.*.so")]
         for pattern in globs_to_try:
             res = glob.glob(pattern)
