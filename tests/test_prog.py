@@ -1,6 +1,6 @@
 import pytest
 
-from forf.base import *
+from forf.pyforf import *
 
 
 @pytest.mark.parametrize(

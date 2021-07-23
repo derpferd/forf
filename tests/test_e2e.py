@@ -4,7 +4,6 @@ import pytest
 
 from forf import (
     InterpretableCompiler,
-    ForfState,
     ExecutableCompiler,
     Compiler,
     CCompiler,
@@ -84,15 +83,15 @@ tests: Dict[str, TestCase] = {
     },
     "test + overflow": {
         "prog": "9223372036854775807 1 + 0 mset",
-        "output": {"mem": {0: -9223372036854775808}}
+        "output": {"mem": {0: -9223372036854775808}},
     },
     "test - underflow": {
         "prog": "-9223372036854775808 1 - 0 mset",
-        "output": {"mem": {0: 9223372036854775807}}
+        "output": {"mem": {0: 9223372036854775807}},
     },
     "test * overflow": {
         "prog": "1152921504606846976 8 * 0 mset",
-        "output": {"mem": {0: -9223372036854775808}}
+        "output": {"mem": {0: -9223372036854775808}},
     },
     "test %": {
         "prog": "5 2 % 0 mset",
@@ -128,27 +127,27 @@ tests: Dict[str, TestCase] = {
     },
     "test >": {
         "prog": "-1 2 > 2 2 > 4 3 > 2 mset 1 mset 0 mset",
-        "output": {"mem": {0: 0, 1: 0, 2: 1}}
+        "output": {"mem": {0: 0, 1: 0, 2: 1}},
     },
     "test >=": {
         "prog": "-1 2 >= 2 2 >= 4 3 >= 2 mset 1 mset 0 mset",
-        "output": {"mem": {0: 0, 1: 1, 2: 1}}
+        "output": {"mem": {0: 0, 1: 1, 2: 1}},
     },
     "test <": {
         "prog": "-1 2 < 2 2 < 4 3 < 2 mset 1 mset 0 mset",
-        "output": {"mem": {0: 1, 1: 0, 2: 0}}
+        "output": {"mem": {0: 1, 1: 0, 2: 0}},
     },
     "test <=": {
         "prog": "-1 2 <= 2 2 <= 4 3 <= 2 mset 1 mset 0 mset",
-        "output": {"mem": {0: 1, 1: 1, 2: 0}}
+        "output": {"mem": {0: 1, 1: 1, 2: 0}},
     },
     "test =": {
         "prog": "-1 2 = 2 2 = 4 3 = 2 mset 1 mset 0 mset",
-        "output": {"mem": {0: 0, 1: 1, 2: 0}}
+        "output": {"mem": {0: 0, 1: 1, 2: 0}},
     },
     "test <>": {
         "prog": "-1 2 <> 2 2 <> 4 3 <> 2 mset 1 mset 0 mset",
-        "output": {"mem": {0: 1, 1: 0, 2: 1}}
+        "output": {"mem": {0: 1, 1: 0, 2: 1}},
     }
     # Nested ifelse
     # Variable number of values on stack after ifelse
@@ -168,11 +167,11 @@ def test_e2e_happy_path(test_case: TestCase, compiler: Compiler):
     output = test_case["output"]
 
     exe = compiler.compile(prog)
-    state = ForfState.new()
+    state = compiler.new_state(rand_seed=123)
     exe.run(state)
 
     for mem_index, mem_value in output["mem"].items():
-        actual = state.mem[mem_index]
+        actual = state.get_mem()[mem_index]
         assert (
             actual == mem_value
         ), f"Memory @{mem_index} is {actual} expected {mem_value}"
@@ -181,37 +180,33 @@ def test_e2e_happy_path(test_case: TestCase, compiler: Compiler):
 @compilers
 def test_divide_by_zero(compiler):
     exe = compiler.compile("0 0 /")
-    state = ForfState.new()
+    state = compiler.new_state(rand_seed=123)
     exe.run(state)
-    assert state.error == Error.DIVIDE_BY_ZERO
+    assert state.get_error() == Error.DIVIDE_BY_ZERO
 
 
 @compilers
 def test_int_divide(compiler):
     exe = compiler.compile("7 6 / 0 mset")
-    state = ForfState.new()
+    state = compiler.new_state(rand_seed=123)
     exe.run(state)
-    assert state.mem[0] == 1
+    assert state.get_mem()[0] == 1
 
 
 @compilers
 def test_memory_under_bounds(compiler):
     exe = compiler.compile("10 -1 mset")
-    state = ForfState.new()
+    state = compiler.new_state(rand_seed=123)
     exe.run(state)
+    assert state.get_error() == Error.OVERFLOW
 
 
-# @pytest.mark.parametrize("test_case", [pytest.param(case, id=name)
-#     for name, case in tests.items()
-# ])
-# def test_e2e_executable(test_case: TestCase):
-#     prog = test_case["prog"]
-#     output = test_case["output"]
-#
-#     exe = ExecutableCompiler().compile(prog)
-#     state = ForfState.new()
+# TODO: uncomment this once random is implemented
+# @compilers
+# def test_rand(compiler):
+#     exe = compiler.compile("100 random 100 random 100 random 0 mset 1 mset 2 mset")
+#     state = compiler.new_state(rand_seed=123)
 #     exe.run(state)
-#
-#     for mem_index, mem_value in output['mem'].items():
-#         actual = state.mem[mem_index]
-#         assert actual == mem_value, f"Memory @{mem_index} is {actual} expected {mem_value}"
+#     assert state.get_mem()[0] == 64
+#     assert state.get_mem()[1] == 82
+#     assert state.get_mem()[2] == 91

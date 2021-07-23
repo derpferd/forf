@@ -6,4 +6,7 @@ project(cforf_project)
 set(CMAKE_C_STANDARD 11)
 
 # add the executable
-add_executable(cforf_project cforfrunner.c forf.c)
+add_executable(cforfrunner src/cforfrunner.c src/forf.c src/rand.c src/libcforf.c)
+
+add_library(${PROJECT_NAME} SHARED src/libcforf src/forf src/rand)
+#add_subdirectory(src)

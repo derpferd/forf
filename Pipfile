@@ -6,6 +6,8 @@ verify_ssl = true
 [dev-packages]
 pytest = "*"
 black = "*"
+build = "*"
+twine = "*"
 
 [packages]
 llvmlite = "*"

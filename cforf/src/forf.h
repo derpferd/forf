@@ -12,6 +12,7 @@ struct forf_env;
 enum forf_value_type {
   forf_type_number,
   forf_type_proc,
+  forf_type_function,
   forf_type_stack_begin,
   forf_type_stack_end,
 };
@@ -25,6 +26,7 @@ enum forf_error_type {
   forf_error_type,
   forf_error_noproc,
   forf_error_divzero,
+  forf_error_init,
 };
 
 extern char *forf_error_str[];
@@ -35,6 +37,7 @@ struct forf_value {
   enum forf_value_type  type;
   union {
     forf_proc          *p;
+    struct forf_func   *f;
     long                i;
   } v;
 };
@@ -50,9 +53,35 @@ struct forf_memory {
   long   *mem;
 };
 
+
+struct slots {
+  size_t  size;
+  long   *slots;
+};
+
+struct effect {
+  long value;
+  long slot;
+};
+
+struct effects {
+    size_t         size;
+    struct effect *effects;
+};
+
+struct forf_func {
+    struct slots   *input_slots;
+    struct effects *effects;
+    struct slots   *output_slots;
+};
+
 struct forf_lexical_env {
-  char      *name;
-  forf_proc *proc;
+  char                  *name;
+  enum forf_value_type  type;
+  union {
+      forf_proc          *p;
+      struct forf_func   *f;
+  } v;
 };
 
 struct forf_env {
@@ -61,6 +90,8 @@ struct forf_env {
   struct forf_stack       *data;
   struct forf_stack       *command;
   struct forf_memory      *memory;
+  struct forf_memory      *slots;
+  unsigned long           *rand_seed;
   void                    *udata;
 };
 
@@ -75,6 +106,11 @@ struct forf_env {
 void forf_memory_init(struct forf_memory *m,
                       long               *values,
                       size_t              size);
+
+/** Initialize a slots structure, given an array of longs */
+void forf_slots_init(struct slots *s,
+                     long               *values,
+                     size_t              size);
 
 /** Initialize a stack, given an array of values */
 void forf_stack_init(struct forf_stack *s,
@@ -114,6 +150,7 @@ void forf_env_init(struct forf_env         *env,
                    struct forf_stack       *data,
                    struct forf_stack       *cmd,
                    struct forf_memory      *mem,
+                   struct forf_memory      *slots,
                    void                    *udata);
 
 /** The type of a getch function (used for parsing) */

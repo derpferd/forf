@@ -1,51 +1,57 @@
 import copy
 import re
 import abc
+import uuid
 from enum import Enum, auto
 from random import randint
 
 import llvmlite.binding as llvm
 from llvmlite import ir
-from dataclasses import dataclass, field
-from collections import defaultdict
+from dataclasses import dataclass
 from ctypes import CFUNCTYPE, c_long, POINTER, pointer, c_ulong, Array
 from typing import List, Dict, Optional, Union, Tuple
 
 from llvmlite.ir import Instruction
+
+from .error import Error
+from .func import ForfFunctionSet
+from .interface import ForfState, ForfProgram, Compiler
 
 TAB = "  "
 
 long = ir.IntType(64)
 
 
-class Error(Enum):
-    NONE = 0
-    RUNTIME = 1
-    PARSE = 2
-    UNDERFLOW = 3
-    OVERFLOW = 4
-    TYPE = 5
-    NO_SUCH_PROCEDURE = 6
-    DIVIDE_BY_ZERO = 7
-
-
 @dataclass
-class ForfState:
+class PyForfState(ForfState):
+    cmd: Array
     data: Array
     mem: Array
+    slots: Array
     rand_seed: c_ulong
-    error: int = 0
+    error: Error = Error.NONE
 
     @classmethod
-    def new(cls, mem_size=10, seed: Optional[Union[c_ulong, int]] = None):
+    def new(
+        cls, func_slots, mem_size=10, rand_seed: Optional[Union[c_ulong, int]] = None
+    ):
+        cmd_size = 500
         data_size = 200
+        _cmd = (c_long * cmd_size)(*[0 for _ in range(cmd_size)])
         _data = (c_long * data_size)(*[0 for _ in range(data_size)])
         _mem = (c_long * mem_size)(*[0 for _ in range(mem_size)])
-        if seed is None:
-            seed = c_ulong(randint(0, 2 ** 40))
-        if isinstance(seed, int):
-            seed = c_ulong(seed)
-        return cls(data=_data, mem=_mem, rand_seed=seed)
+        _slots = (c_long * mem_size)(*[0 for _ in range(func_slots)])
+        if rand_seed is None:
+            rand_seed = c_ulong(randint(0, 2 ** 40))
+        if isinstance(rand_seed, int):
+            rand_seed = c_ulong(rand_seed)
+        return cls(cmd=_cmd, data=_data, mem=_mem, slots=_slots, rand_seed=rand_seed)
+
+    def get_mem(self):
+        return self.mem
+
+    def get_error(self):
+        return self.error
 
     def set_mem(self, mem: List[int]):
         assert len(mem) == len(self.mem)
@@ -81,7 +87,7 @@ class ForfCmd(abc.ABC):
         self._children = children
 
     @abc.abstractmethod
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         ...
 
     @abc.abstractmethod
@@ -141,7 +147,7 @@ class ForfVar(ForfCmd):
     INPUTS = 0
     OUTPUTS = 1
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         return state.data[self._token]
         # raise NotImplementedError()
         # return self._token
@@ -159,7 +165,7 @@ class ForfValue(ForfCmd):
     INPUTS = 0
     OUTPUTS = 1
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         return self._token
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
@@ -180,7 +186,7 @@ class ForfUni(ForfCmd):
     INPUTS = 1
     OUTPUTS = 1
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         return self.OPS[self._token](self._child.exec())
 
     @property
@@ -216,7 +222,7 @@ class ForfBin(ForfCmd):
     INPUTS = 2
     OUTPUTS = 1
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         b1, b2 = self._children
         return self.OPS[self._token](b1.exec(state), b2.exec(state))
 
@@ -263,7 +269,7 @@ class ForfPop(ForfCmd):
     INPUTS = 1
     OUTPUTS = 0
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         raise ValueError("This value is evaluated at compile time!")
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
@@ -284,7 +290,7 @@ class ForfDup(ForfCmd):
     INPUTS = 1
     OUTPUTS = 2
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         raise ValueError("This value is evaluated at compile time!")
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
@@ -306,7 +312,7 @@ class ForfExch(ForfCmd):
     INPUTS = 2
     OUTPUTS = 2
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         raise ValueError("This value is evaluated at compile time!")
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
@@ -329,12 +335,20 @@ class ForfMset(ForfCmd):
     def will_return_value(self) -> bool:
         return False
 
-    def exec(self, state: ForfState):
-        state.mem[self._slot.exec(state)] = self._value.exec(state)
+    def exec(self, state: PyForfState):
+        slot = self._slot.exec(state)
+        if slot < 0:
+            raise IndexError("Index out of range")
+        state.mem[slot] = self._value.exec(state)
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
+        ir_slot = self._slot.build(builder, variables)
+        pred = builder.icmp_signed("<", ir_slot, long(0))
+        with builder.if_then(pred):
+            builder.ret(long(Error.OVERFLOW.value))
+
         mem, _ = builder.function.args
-        x = builder.gep(mem, (long(0), self._slot.build(builder, variables)))
+        x = builder.gep(mem, (long(0), ir_slot))
         builder.store(self._value.build(builder, variables), x)
 
     @property
@@ -361,7 +375,7 @@ class ForfMget(ForfCmd):
     OUTPUTS = 1
     ORDER_SENSITIVE = True
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         (b1,) = self._children
         return state.mem[b1.exec(state)]
 
@@ -400,7 +414,7 @@ class ForfIfElse(ForfCmd):
         self._if_blocks = if_blocks
         self._else_blocks = else_blocks
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         blocks = self._else_blocks
         if self._condition.exec(state):
             blocks = self._if_blocks
@@ -465,6 +479,7 @@ class ForfFuncType(Enum):
 class ForfFunc(ForfCmd):
     ORDER_SENSITIVE = True
 
+
 """
 func_data
 
@@ -475,18 +490,21 @@ Output          : func_data -> stack  (only allow one output)
 """
 
 
-class ForfRand(ForfFunc):
+class ForfRand(ForfCmd):
     OPS = {"random"}
     INPUTS = 1
     OUTPUTS = 1
+    ORDER_SENSITIVE = True
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         raise NotImplementedError
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
         _, seed = builder.function.args
+        b1 = self._children[0]
+        ir_1 = b1.build(builder, variables)
         rand = builder.module.get_global("rand")
-        return builder.call(rand, (seed, long(100)))
+        return builder.call(rand, (seed, ir_1))
 
 
 # class ForfFunc(ForfCmd):
@@ -533,7 +551,7 @@ class ForfProg:
             return False
         raise NotImplementedError()
 
-    def exec(self, state: ForfState):
+    def exec(self, state: PyForfState):
         if not self._frozen:
             raise ValueError("Prog must be frozen before execution.")
         for block in self._blocks:
@@ -846,7 +864,7 @@ def parse(tokens: List[str]):
 
 
 def exec(code):
-    state = ForfState.new()
+    state = PyForfState.new()
     res = []
     for cmd in parse(tokenize(remove_comments(code))):
         exec_res = cmd.exec(state)
@@ -879,7 +897,6 @@ def create_execution_engine():
 
 def comp(module, code):
     ast = parse(tokenize(remove_comments(code)))
-    # ast = [ForfRand('tears', [])]
     if any(ForfRand in b for b in ast):
         make_rand(module)
 
@@ -1284,3 +1301,84 @@ if "__main__" in __name__:
     main()
 
 # TODO: Make sure can handle: "1 2 3 mget 0 mset +"
+
+
+class ForfInterpretable(ForfProgram):
+    def __init__(self, prog: ForfProg, mem_size: int):
+        self._prog = prog
+        self._mem_size = mem_size
+
+    def run(self, state: PyForfState):
+        if len(state.mem) != self._mem_size:
+            raise ValueError("State memory size doesn't match code")
+        try:
+            self._prog.exec(state)
+        except ZeroDivisionError:
+            state.error = Error.DIVIDE_BY_ZERO
+        except IndexError:
+            state.error = Error.OVERFLOW
+
+
+class ForfExecutable(ForfProgram):
+    def __init__(self, cfunc, mem_size: int):
+        self._cfunc = cfunc
+        self._mem_size = mem_size
+
+    def run(self, state: PyForfState):
+        if len(state.mem) != self._mem_size:
+            raise ValueError("State memory size doesn't match code")
+        res = self._cfunc(pointer(state.mem), pointer(state.rand_seed))
+        state.error = Error(res)
+
+
+class ExecutableCompiler(Compiler):
+    def __init__(
+        self,
+        custom_function_set: ForfFunctionSet = None,
+        command_stack_size=500,
+        data_stack_size=200,
+        memory_size=10,
+    ):
+        super().__init__(
+            custom_function_set, command_stack_size, data_stack_size, memory_size
+        )
+        self._engine = create_execution_engine()
+
+    def compile(self, code: str, mem_size: int = 10) -> ForfProgram:
+        from llvmlite import ir
+
+        module = ir.Module(name=__file__)
+
+        func_name = f"func_{uuid.uuid4().hex}"
+        ast = parse(tokenize(remove_comments(code)))
+
+        if ForfRand in ast:
+            make_rand(module)
+
+        long = ir.IntType(64)
+        long_array = ir.ArrayType(long, mem_size)
+        fnty = ir.FunctionType(long, (long_array.as_pointer(), long.as_pointer()))
+        func = ir.Function(module, fnty, name=func_name)
+
+        block = func.append_basic_block(name="entry")
+        builder = ir.IRBuilder(block)
+        ast.build(builder)
+        compile_ir(self._engine, str(module))
+        func_ptr = self._engine.get_function_address(func_name)
+        CTypeArray = c_long * mem_size
+        cfunc = CFUNCTYPE(c_long, POINTER(CTypeArray), POINTER(c_ulong))(func_ptr)
+        return ForfExecutable(cfunc, mem_size=mem_size)
+
+    def new_state(self, rand_seed: int) -> ForfState:
+        return PyForfState.new(
+            func_slots=self._custom_function_set.needed_slots, rand_seed=rand_seed
+        )
+
+
+class InterpretableCompiler(Compiler):
+    def compile(self, code: str, mem_size: int = 10) -> ForfProgram:
+        prog = parse(tokenize(remove_comments(code)))
+        return ForfInterpretable(prog=prog, mem_size=mem_size)
+
+    def new_state(self, rand_seed: int) -> ForfState:
+        return PyForfState.new(func_slots=self._custom_function_set.needed_slots)

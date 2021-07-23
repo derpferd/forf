@@ -1,5 +1,5 @@
 import pytest
-from forf.base import *
+from forf.pyforf import *
 
 
 def test_tokenize():
@@ -343,8 +343,8 @@ def test_parse(tokens, output):
     assert parse(tokens) == output
 
 
-# def test_parse_rand():
-#     assert parse(['1', 'random']) == [ForfRand('random', [ForfValue(1)])]
+def test_parse_rand():
+    assert parse(["1", "random"]) == ForfProg([B(ForfRand("random", [ForfValue(1)]))])
 
 
 # @pytest.mark.parametrize('tokens', (
@@ -354,13 +354,3 @@ def test_parse(tokens, output):
 #     with pytest.raises(IndexError) as excinfo:
 #         parse(tokens)
 #     assert "pop from empty stack" in str(excinfo.value)
-
-
-# @pytest.mark.parametrize('num,in_list,inputs,out_list', (
-#     (1, [ForfValue(1)], [ForfValue(1)], []),
-#     (2, [ForfValue(1), ForfValue(2)], [ForfValue(1), ForfValue(2)], []),
-#     (2, [ForfValue(1), ForfMset('mset'), ForfValue(2)], [ForfValue(1), ForfValue(2)], [ForfMset('mset')]),
-# ))
-# def test_get_inputs_from_list(num, in_list, inputs, out_list):
-#     assert _get_inputs_from_list(num, in_list) == inputs
-#     assert in_list == out_list

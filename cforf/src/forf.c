@@ -34,6 +34,7 @@
 
 #include "forf.h"
 #include "dump.h"
+#include "rand.h"
 
 #ifndef max
 #define max(a,b) (((a) > (b)) ? (a) : (b))
@@ -63,6 +64,20 @@ forf_memory_init(struct forf_memory *m,
 {
   m->mem  = values;
   m->size = size;
+}
+
+/*
+ *
+ * Slot initiation
+ *
+ */
+void
+forf_slots_init(struct slots *s,
+                long               *values,
+                size_t              size)
+{
+  s->slots  = values;
+  s->size = size;
 }
 
 
@@ -452,39 +467,57 @@ forf_proc_memget(struct forf_env *env)
   forf_push_num(env, env->memory->mem[pos]);
 }
 
+/** Pick a random number */
+void forf_proc_random(struct forf_env *env)
+{
+  long max = forf_pop_num(env);
+
+  if (max < 1) {
+    forf_push_num(env, 0);
+    return;
+  }
+
+//  long num = rand((struct udata*)env->udata)
+//  struct udata *udata   = (struct udata *)env->udata;
+  long num = forf_rand(env->rand_seed, max);
+
+  forf_push_num(env, num);
+}
+
 /*
  *
  * Lexical environment
  *
  */
 struct forf_lexical_env forf_base_lexical_env[] = {
-  {"~", forf_proc_inv},
-  {"!", forf_proc_not},
-  {"+", forf_proc_add},
-  {"-", forf_proc_sub},
-  {"*", forf_proc_mul},
-  {"/", forf_proc_div},
-  {"%", forf_proc_mod},
-  {"&", forf_proc_and},
-  {"|", forf_proc_or},
-  {"^", forf_proc_xor},
-  {"<<", forf_proc_lshift},
-  {">>", forf_proc_rshift},
-  {">", forf_proc_gt},
-  {">=", forf_proc_ge},
-  {"<", forf_proc_lt},
-  {"<=", forf_proc_le},
-  {"=", forf_proc_eq},
-  {"<>", forf_proc_ne},
-  {"abs", forf_proc_abs},
-  {"dup", forf_proc_dup},
-  {"pop", forf_proc_pop},
-  {"exch", forf_proc_exch},
-  {"if", forf_proc_if},
-  {"ifelse", forf_proc_ifelse},
-  {"mset", forf_proc_memset},
-  {"mget", forf_proc_memget},
-  {NULL, NULL}
+  {"~", forf_type_proc, forf_proc_inv},
+  {"!", forf_type_proc, forf_proc_not},
+  {"+", forf_type_proc, forf_proc_add},
+  {"-", forf_type_proc, forf_proc_sub},
+  {"*", forf_type_proc, forf_proc_mul},
+  {"/", forf_type_proc, forf_proc_div},
+  {"%", forf_type_proc, forf_proc_mod},
+  {"&", forf_type_proc, forf_proc_and},
+  {"|", forf_type_proc, forf_proc_or},
+  {"^", forf_type_proc, forf_proc_xor},
+  {"<<", forf_type_proc, forf_proc_lshift},
+  {">>", forf_type_proc, forf_proc_rshift},
+  {">", forf_type_proc, forf_proc_gt},
+  {">=", forf_type_proc, forf_proc_ge},
+  {"<", forf_type_proc, forf_proc_lt},
+  {"<=", forf_type_proc, forf_proc_le},
+  {"=", forf_type_proc, forf_proc_eq},
+  {"<>", forf_type_proc, forf_proc_ne},
+  {"abs", forf_type_proc, forf_proc_abs},
+  {"dup", forf_type_proc, forf_proc_dup},
+  {"pop", forf_type_proc, forf_proc_pop},
+  {"exch", forf_type_proc, forf_proc_exch},
+  {"if", forf_type_proc, forf_proc_if},
+  {"ifelse", forf_type_proc, forf_proc_ifelse},
+  {"mset", forf_type_proc, forf_proc_memset},
+  {"mget", forf_type_proc, forf_proc_memget},
+  {"random", forf_type_proc, forf_proc_random},
+  {NULL, forf_type_proc, NULL}
 };
 
 /** Extend a lexical environment */
@@ -504,7 +537,7 @@ forf_extend_lexical_env(struct forf_lexical_env *dest,
     return 0;
   }
   dest[base+i].name = NULL;
-  dest[base+i].proc = NULL;
+  dest[base+i].v.p = NULL;
   return 1;
 }
 
@@ -535,11 +568,16 @@ forf_push_token(struct forf_env *env, char *token, size_t tokenlen)
     val.type = forf_type_number;
     val.v.i = i;
   } else {
-    /* If not an int, a procedure name */
-    val.type = forf_type_proc;
+    /* If not an int, a procedure or function name */
     for (i = 0; NULL != env->lenv[i].name; i += 1) {
       if (0 == strcmp(s, env->lenv[i].name)) {
-        val.v.p = env->lenv[i].proc;
+        if (env->lenv[i].type == forf_type_proc) {
+          val.type = forf_type_proc;
+          val.v.p = env->lenv[i].v.p;
+        } else if (env->lenv[i].type == forf_type_function) {
+          val.type = forf_type_function;
+          val.v.f = env->lenv[i].v.f;
+        }
         break;
       }
     }
@@ -707,15 +745,53 @@ forf_env_init(struct forf_env         *env,
               struct forf_stack       *data,
               struct forf_stack       *cmd,
               struct forf_memory      *mem,
+              struct forf_memory      *slots,
               void                    *udata)
 {
   env->lenv    = lenv;
   env->data    = data;
   env->command = cmd;
   env->memory  = mem;
+  env->slots   = slots;
   env->udata   = udata;
 }
 
+
+void forf_exec_func(struct forf_env *env, struct forf_func *func) {
+  for (int i = 0; i < func->input_slots->size; ++i) {
+    long slot = func->input_slots->slots[i];
+    if (slot < env->slots->size) {
+      long val = forf_pop_num(env);
+      env->slots->mem[slot] = val;
+    } else {
+      env->error = forf_error_runtime;
+      return;
+    }
+  }
+
+  for (int i = 0; i < func->effects->size; ++i) {
+    long slot = func->effects->effects[i].slot;
+    long val = func->effects->effects[i].value;
+    if (slot < env->slots->size) {
+      env->slots->mem[slot] = val;
+    } else {
+      env->error = forf_error_runtime;
+      return;
+    }
+
+  }
+
+  for (int i = 0; i < func->output_slots->size; ++i) {
+    long slot = func->output_slots->slots[i];
+    if (slot < env->slots->size) {
+      long val = env->slots->mem[slot];
+      forf_push_num(env, val);
+    } else {
+      env->error = forf_error_runtime;
+      return;
+    }
+  }
+}
 
 int
 forf_eval_once(struct forf_env *env)
@@ -735,6 +811,9 @@ forf_eval_once(struct forf_env *env)
       break;
     case forf_type_proc:
       (val.v.p)(env);
+      break;
+    case forf_type_function:
+      forf_exec_func(env, val.v.f);
       break;
     default:
       env->error = forf_error_runtime;
