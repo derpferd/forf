@@ -201,12 +201,19 @@ def test_memory_under_bounds(compiler):
     assert state.get_error() == Error.OVERFLOW
 
 
-# TODO: uncomment this once random is implemented
-# @compilers
-# def test_rand(compiler):
-#     exe = compiler.compile("100 random 100 random 100 random 0 mset 1 mset 2 mset")
-#     state = compiler.new_state(rand_seed=123)
-#     exe.run(state)
-#     assert state.get_mem()[0] == 64
-#     assert state.get_mem()[1] == 82
-#     assert state.get_mem()[2] == 91
+@compilers
+def test_rand(compiler):
+    exe = compiler.compile("100 random 100 random 100 random 0 mset 1 mset 2 mset")
+    state = compiler.new_state(rand_seed=123)
+    exe.run(state)
+    assert state.get_mem()[0] == 64
+    assert state.get_mem()[1] == 82
+    assert state.get_mem()[2] == 91
+
+
+@compilers
+def test_rand_single(compiler):
+    exe = compiler.compile("100 random 0 mset")
+    state = compiler.new_state(rand_seed=123)
+    exe.run(state)
+    assert state.get_mem()[0] == 91
