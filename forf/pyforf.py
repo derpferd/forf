@@ -16,6 +16,7 @@ from llvmlite.ir import Instruction
 from .error import Error
 from .func import ForfFunctionSet
 from .interface import ForfState, ForfProgram, Compiler
+from .rand import rand
 
 TAB = "  "
 
@@ -497,7 +498,14 @@ class ForfRand(ForfCmd):
     ORDER_SENSITIVE = True
 
     def exec(self, state: PyForfState):
-        raise NotImplementedError
+        child_val = self._child.exec(state)
+        state.rand_seed, value = rand(state.rand_seed, child_val)
+        return value
+
+    @property
+    def _child(self):
+        (child,) = self._children
+        return child
 
     def build(self, builder: ir.IRBuilder, variables: Dict[int, Instruction]):
         _, seed = builder.function.args
@@ -1381,4 +1389,4 @@ class InterpretableCompiler(Compiler):
         return ForfInterpretable(prog=prog, mem_size=mem_size)
 
     def new_state(self, rand_seed: int) -> ForfState:
-        return PyForfState.new(func_slots=self._custom_function_set.needed_slots)
+        return PyForfState.new(func_slots=self._custom_function_set.needed_slots, rand_seed=rand_seed)
