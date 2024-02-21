@@ -1,6 +1,7 @@
 import glob
 import os
 from ctypes import (
+    cast,
     cdll,
     Structure,
     c_int,
@@ -303,7 +304,7 @@ class CCompiler(Compiler):
             effects = ForfEffects.new(effects_arr)
 
             out_arr = (c_long * len(func.output_slots))(*func.output_slots)
-            out_slots = ForfSlots.new(in_arr)
+            out_slots = ForfSlots.new(out_arr)
             self._ref_holder.extend(
                 (in_arr, in_slots, effects_arr, effects, out_arr, out_slots)
             )
@@ -312,7 +313,7 @@ class CCompiler(Compiler):
 
             func_name = create_string_buffer(func.token.encode())
             self._ref_holder.append(func_name)
-            lex_env[i].name = func_name
+            lex_env[i].name = cast(func_name, c_char_p)
             lex_env[i].type = FORF_TYPE_FUNCTION
             lex_env[i].v.f = pointer(f)
         lex_env[-1].name = None
